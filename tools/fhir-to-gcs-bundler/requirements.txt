@@ -10,7 +10,10 @@ Flask==3.0.3
 functions-framework==3.8.1
 google-api-core==2.20.0
 google-auth==2.35.0
+google-cloud-appengine-logging==1.4.5
+google-cloud-audit-log==0.3.0
 google-cloud-core==2.4.1
+google-cloud-logging==3.11.2
 google-cloud-pubsub==2.25.2
 google-cloud-storage==2.18.2
 google-crc32c==1.6.0

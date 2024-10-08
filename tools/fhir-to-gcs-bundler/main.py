@@ -3,10 +3,12 @@ import google.auth.transport.requests
 import requests
 import json
 import os
+import time
 from google.cloud import storage
 import functions_framework
 from flask import Flask, request
 import base64
+
 
 def generate_creds():
   creds, project = google.auth.default()
@@ -16,18 +18,15 @@ def generate_creds():
   bearer_token = creds.token
   return bearer_token
 
+app = Flask(__name__)
+app.config["BEARER_TOKEN"] = generate_creds()
+
 def get_env_vars():
   args = {}
   args['FHIR_STORE'] = os.environ['FHIR_STORE']
   args['BUCKET'] = os.environ['BUCKET']
   return args
 
-app = Flask(__name__)
-bearer_token = generate_creds()
-
-'''
-Data schema: {"patient_id":"id"} where 'id' is the Resource.id of the patient
-'''
 
 def upload_blob_from_memory(bucket_name, contents, destination_blob_name):
     """Uploads a file to the bucket."""
@@ -37,7 +36,7 @@ def upload_blob_from_memory(bucket_name, contents, destination_blob_name):
 
     blob.upload_from_string(contents)
 
-    print(f"{destination_blob_name} with uploaded to {bucket_name}.")
+    print(f"{destination_blob_name} uploaded to {bucket_name}.")
 
 def fetch_resource_next_link(next_page_resources) :
     next_url = None
@@ -49,16 +48,16 @@ def fetch_resource_next_link(next_page_resources) :
 
 def extract_resources(entry_patient_resources) :
     data = [json.dumps(resource_patient["resource"]) for resource_patient in entry_patient_resources]
-    print(f"extracted {len(data)}  records")
+    print(f"Extracted {len(data)}  records")
     return data
 
 def _get_helper(url):
-  headers = {"Content-Type": "application/fhir+json","Authorization": f"Bearer {bearer_token}"}
-#  print(url)
+  headers = {"Content-Type": "application/fhir+json","Authorization": f"Bearer {app.config['BEARER_TOKEN']}"}
   response = requests.get(url, headers=headers)
-  if response.status_code == "401":
+  if response.status_code == 401:
     print("Possibly bad token, retrying once after refreshing the token.")
-    generate_creds()
+    app.config["BEARER_TOKEN"] = generate_creds()
+    headers = {"Content-Type": "application/fhir+json","Authorization": f"Bearer {app.config['BEARER_TOKEN']}"}
     response = requests.get(url, headers=headers)
   response.raise_for_status()
   return response
@@ -89,6 +88,9 @@ def get_patient_everything(patient_id, fhir_store):
 
 
 def extract_id(message):
+  '''
+  Data schema: {"patient_id":"id"} where 'id' is the Resource.id of the patient
+  '''
   base64_name = message["message"]["data"]
   data = base64.b64decode(base64_name).decode('utf-8')
   data_dict = json.loads(data)
@@ -105,9 +107,12 @@ def to_ndjson_format(resources):
 
 @app.route("/", methods = ['POST'])
 def main():
+  start = time.time()
   args = get_env_vars()
   fhir_store = args["FHIR_STORE"]
   bucket = args["BUCKET"]
+# This is bad, don't do this. It executes every invocation.
+#  app.config["BEARER_TOKEN"] = generate_creds() 
   request_json = request.get_json()
   patient_id = extract_id(request_json)
   print(f"Starting {patient_id}")
@@ -116,11 +121,13 @@ def main():
 
   ndjson = to_ndjson_format(patient_lpr)
 
-  upload_blob_from_memory(bucket, bytes(ndjson, encoding='utf8'), f"fhir-to-gcs-bundler/{patient_id}")
-  print(f"Finished {patient_id}")
+  upload_blob_from_memory(bucket, bytes(ndjson, encoding='utf8'), f"fhir-to-gcs-bundler/{patient_id}.ndjson")
+  end = time.time()
+  print(f"Finished {patient_id} in {end - start}s")
+
 
   return patient_id
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+  app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
 
