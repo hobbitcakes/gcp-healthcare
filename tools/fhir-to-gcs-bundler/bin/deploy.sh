@@ -6,4 +6,6 @@ gcloud run deploy fhir-to-gcs-bundler \
 --image=$IMAGE:latest \
 --region=us-central1 \
 --project=${src_intake} \
+--memory=4Gi \
+--cpu=2 \
 --set-env-vars "FHIR_STORE=${FHIR_STORE},BUCKET=${BUCKET}"

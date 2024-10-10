@@ -8,7 +8,7 @@ from google.cloud import storage
 import functions_framework
 from flask import Flask, request
 import base64
-
+import uuid
 
 def generate_creds():
   creds, project = google.auth.default()
@@ -34,7 +34,7 @@ def upload_blob_from_memory(bucket_name, contents, destination_blob_name):
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(destination_blob_name)
 
-    blob.upload_from_string(contents)
+    blob.upload_from_string(contents, timeout=120)
 
     print(f"{destination_blob_name} uploaded to {bucket_name}.")
 
@@ -51,14 +51,17 @@ def extract_resources(entry_patient_resources) :
     print(f"Extracted {len(data)}  records")
     return data
 
-def _get_helper(url):
+def _get_helper(url, retries=0):
   headers = {"Content-Type": "application/fhir+json","Authorization": f"Bearer {app.config['BEARER_TOKEN']}"}
+  time.sleep(retries * 3)
   response = requests.get(url, headers=headers)
   if response.status_code == 401:
     print("Possibly bad token, retrying once after refreshing the token.")
     app.config["BEARER_TOKEN"] = generate_creds()
     headers = {"Content-Type": "application/fhir+json","Authorization": f"Bearer {app.config['BEARER_TOKEN']}"}
     response = requests.get(url, headers=headers)
+  if response.status_code == 429 and retries < 4:
+    response = _get_helper(url, retries + 1)
   response.raise_for_status()
   return response
 
@@ -121,7 +124,11 @@ def main():
 
   ndjson = to_ndjson_format(patient_lpr)
 
-  upload_blob_from_memory(bucket, bytes(ndjson, encoding='utf8'), f"fhir-to-gcs-bundler/{patient_id}.ndjson")
+  # Uncomment below line and comment the other to switch between
+  # (non)deteriministic file names
+  #object_name = f"fhir-to-gcs-bundler/{str(uuid.uuid4())}.ndjson" # Possibly duplicates
+  object_name = f"fhir-to-gcs-bundler/{patient_id}.ndjson" # No duplicates
+  upload_blob_from_memory(bucket, bytes(ndjson, encoding='utf8'), object_name)
   end = time.time()
   print(f"Finished {patient_id} in {end - start}s")
 
