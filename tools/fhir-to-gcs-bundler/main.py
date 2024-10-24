@@ -138,8 +138,8 @@ def main():
 
   # Uncomment below line and comment the other to switch between
   # (non)deteriministic file names
-  object_name = f"fhir-to-gcs-bundler/{str(uuid.uuid4())}.ndjson" # Possibly duplicates
-  #object_name = f"fhir-to-gcs-bundler/{patient_id}.ndjson" # No duplicates
+  #object_name = f"fhir-to-gcs-bundler/{str(uuid.uuid4())}.ndjson" # Possibly duplicates
+  object_name = f"fhir-to-gcs-bundler/{patient_id}.ndjson" # No duplicates
   upload_blob_from_memory(bucket, bytes(ndjson, encoding='utf8'), object_name)
   end = time.time()
   print(f"Finished {patient_id} in {end - start}s")
