@@ -34,9 +34,11 @@ def upload_blob_from_memory(bucket_name, contents, destination_blob_name):
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(destination_blob_name)
 
-    blob.upload_from_string(contents, timeout=120)
-
-    print(f"{destination_blob_name} uploaded to {bucket_name}.")
+    start = time.time()
+    blob.upload_from_string(contents, timeout=360)
+    end = time.time()
+    print(f"{destination_blob_name} uploaded to {bucket_name} in {end - start}s")
+    return "OK"
 
 def fetch_resource_next_link(next_page_resources) :
     next_url = None
@@ -53,8 +55,13 @@ def extract_resources(entry_patient_resources) :
 
 def _get_helper(url, retries=0):
   headers = {"Content-Type": "application/fhir+json","Authorization": f"Bearer {app.config['BEARER_TOKEN']}"}
-  time.sleep(retries * 3)
+  if retries > 0:
+    print(f"Retry number {retries} with simple backoff")
+    time.sleep(retries * 3)
+  start = time.time()
   response = requests.get(url, headers=headers)
+  end = time.time() 
+  print(f"GET request took {end - start}s to complete") 
   if response.status_code == 401:
     print("Possibly bad token, retrying once after refreshing the token.")
     app.config["BEARER_TOKEN"] = generate_creds()
@@ -62,6 +69,7 @@ def _get_helper(url, retries=0):
     response = requests.get(url, headers=headers)
   if response.status_code == 429 and retries < 4:
     response = _get_helper(url, retries + 1)
+
   response.raise_for_status()
   return response
 
@@ -76,6 +84,7 @@ def _has_next_page(lpr):
 def _get_all_pages(url):
   response = _get_helper(url)
   lpr = response.json()
+  print(f"This patient has {lpr['total']} resources")
   resources = extract_resources(lpr["entry"])
   if  _has_next_page(lpr):
     print(f'Getting next page of results: {lpr["link"]}')
@@ -120,14 +129,17 @@ def main():
   patient_id = extract_id(request_json)
   print(f"Starting {patient_id}")
 
-  patient_lpr = get_patient_everything(patient_id, fhir_store)
+  try:
+    patient_lpr = get_patient_everything(patient_id, fhir_store)
+  except Exception as e:
+    return f"Failed because of {e.message}"
 
   ndjson = to_ndjson_format(patient_lpr)
 
   # Uncomment below line and comment the other to switch between
   # (non)deteriministic file names
-  #object_name = f"fhir-to-gcs-bundler/{str(uuid.uuid4())}.ndjson" # Possibly duplicates
-  object_name = f"fhir-to-gcs-bundler/{patient_id}.ndjson" # No duplicates
+  object_name = f"fhir-to-gcs-bundler/{str(uuid.uuid4())}.ndjson" # Possibly duplicates
+  #object_name = f"fhir-to-gcs-bundler/{patient_id}.ndjson" # No duplicates
   upload_blob_from_memory(bucket, bytes(ndjson, encoding='utf8'), object_name)
   end = time.time()
   print(f"Finished {patient_id} in {end - start}s")

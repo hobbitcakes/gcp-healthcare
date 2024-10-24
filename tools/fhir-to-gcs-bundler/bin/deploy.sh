@@ -5,10 +5,10 @@ gcloud --project=$src_intake beta run deploy fhir-to-gcs-bundler \
 --image=${IMAGE}:latest \
 --region=$src_region \
 --no-allow-unauthenticated \
---timeout=300 \
---cpu=2 \
---memory=4Gi \
+--timeout=3600 \
+--cpu=8 \
+--memory=8Gi \
 --no-cpu-throttling \
---max-instances=100 \
+--max-instances=500 \
 --concurrency=8 \
 --set-env-vars "FHIR_STORE=${FHIR_STORE},BUCKET=${BUCKET}"
